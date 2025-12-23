@@ -5,54 +5,169 @@
   <title>Argent disponible</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: 30px auto; }
-    h1 { text-align: center; }
-    .box { border: 1px solid #ccc; padding: 15px; border-radius: 10px; margin-bottom: 15px; }
-    input, button { width: 100%; padding: 10px; margin-top: 8px; }
-    button { background: black; color: white; border: none; cursor: pointer; }
-    .in { color: green; }
-    .out { color: red; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;max-width:700px;margin:28px auto;padding:0 14px}
+    h1{margin:0 0 6px;text-align:center}
+    .muted{color:#666;text-align:center;margin-bottom:14px}
+    .grid{display:grid;gap:12px}
+    @media(min-width:720px){.grid-2{grid-template-columns:1fr 1fr}}
+    .box{border:1px solid #ddd;padding:14px;border-radius:14px}
+    label{font-size:14px;color:#444}
+    input,button{width:100%;padding:10px;margin-top:8px;border-radius:10px;border:1px solid #ddd;font-size:15px}
+    button{background:#111;color:#fff;border:none;cursor:pointer}
+    button.secondary{background:#fff;color:#111;border:1px solid #111}
+    .kpi{font-size:28px;font-weight:800;text-align:center;margin:6px 0}
+    .row{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+    table{width:100%;border-collapse:collapse;margin-top:10px}
+    th,td{padding:10px;border-bottom:1px solid #eee;text-align:left;font-size:14px}
+    .right{text-align:right}
+    .in{color:#0a7a2f}
+    .out{color:#b00020}
+    .actions{display:flex;gap:10px}
+    .actions button{width:auto}
   </style>
 </head>
 <body>
 
 <h1>Argent disponible</h1>
+<div class="muted">Ajoute tes entrées et tes dépenses. Le solde et l’historique se mettent à jour et restent enregistrés.</div>
 
 <div class="box">
-  <label>Salaire / entrée d'argent</label>
-  <input id="in" type="number">
-  <button onclick="addIn()">Ajouter entrée</button>
+  <div style="text-align:center;color:#666">Disponible</div>
+  <div class="kpi" id="total">0,00 €</div>
+  <div class="actions" style="justify-content:center">
+    <button class="secondary" onclick="undo()">Annuler la dernière</button>
+    <button class="secondary" onclick="resetAll()">Remise à zéro</button>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="box">
+    <label>Entrée (salaire, remboursement…)</label>
+    <input id="inAmount" type="number" step="0.01" placeholder="Montant (ex: 1500)">
+    <input id="inLabel" type="text" placeholder="Libellé (ex: Salaire)">
+    <button onclick="addOp('in')">Ajouter entrée</button>
+  </div>
+
+  <div class="box">
+    <label>Dépense (loyer, courses…)</label>
+    <input id="outAmount" type="number" step="0.01" placeholder="Montant (ex: 45)">
+    <input id="outLabel" type="text" placeholder="Libellé (ex: Courses)">
+    <button onclick="addOp('out')">Ajouter dépense</button>
+  </div>
 </div>
 
 <div class="box">
-  <label>Dépense</label>
-  <input id="out" type="number">
-  <button onclick="addOut()">Ajouter dépense</button>
-</div>
-
-<div class="box">
-  <h2>Disponible : <span id="total">0</span> €</h2>
+  <div style="font-weight:700;margin-bottom:6px">Historique</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Type</th>
+        <th>Libellé</th>
+        <th class="right">Montant</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
 </div>
 
 <script>
-  let total = 0;
+  const KEY = "argent_dispo_v2";
+  let state = { total: 0, ops: [] };
 
-  function addIn() {
-    const v = Number(document.getElementById("in").value);
-    total += v;
-    update();
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (raw) state = JSON.parse(raw);
+    } catch {}
+    render();
   }
 
-  function addOut() {
-    const v = Number(document.getElementById("out").value);
-    total -= v;
-    update();
+  function save() {
+    localStorage.setItem(KEY, JSON.stringify(state));
   }
 
-  function update() {
-    document.getElementById("total").textContent = total;
+  function fmt(n) {
+    return new Intl.NumberFormat("fr-FR", { style:"currency", currency:"EUR" }).format(n || 0);
   }
+
+  function nowDate() {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2,"0");
+    const mm = String(d.getMonth()+1).padStart(2,"0");
+    const yy = d.getFullYear();
+    return `${dd}/${mm}/${yy}`;
+  }
+
+  function addOp(type) {
+    const amtId = type === "in" ? "inAmount" : "outAmount";
+    const labId = type === "in" ? "inLabel" : "outLabel";
+    const amount = Number(document.getElementById(amtId).value);
+    const label = document.getElementById(labId).value.trim() || (type === "in" ? "Entrée" : "Dépense");
+
+    if (!amount || amount <= 0) return alert("Entre un montant > 0");
+
+    const signed = type === "in" ? amount : -amount;
+    state.total = Number(state.total || 0) + signed;
+
+    state.ops.unshift({
+      type,
+      amount,
+      label,
+      date: nowDate()
+    });
+
+    document.getElementById(amtId).value = "";
+    document.getElementById(labId).value = "";
+
+    save();
+    render();
+  }
+
+  function undo() {
+    if (!state.ops.length) return alert("Rien à annuler.");
+    const last = state.ops.shift();
+    const signed = last.type === "in" ? last.amount : -last.amount;
+    state.total = Number(state.total || 0) - signed;
+    save();
+    render();
+  }
+
+  function resetAll() {
+    if (!confirm("Tout remettre à zéro ?")) return;
+    state = { total: 0, ops: [] };
+    save();
+    render();
+  }
+
+  function render() {
+    document.getElementById("total").textContent = fmt(state.total);
+
+    const rows = document.getElementById("rows");
+    rows.innerHTML = "";
+
+    for (const op of state.ops) {
+      const tr = document.createElement("tr");
+      const sign = op.type === "in" ? "+" : "-";
+      tr.innerHTML = `
+        <td>${op.date}</td>
+        <td class="${op.type}">${op.type === "in" ? "Entrée" : "Dépense"}</td>
+        <td>${escapeHtml(op.label)}</td>
+        <td class="right ${op.type}">${sign}${fmt(op.amount)}</td>
+      `;
+      rows.appendChild(tr);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, m => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+    }[m]));
+  }
+
+  load();
 </script>
 
 </body>
 </html>
+
